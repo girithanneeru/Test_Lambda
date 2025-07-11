@@ -1,9 +1,6 @@
-```yaml
 name: Timeout Lambda Simulation
-
 on:
   workflow_dispatch:
-
 jobs:
   timeout-lambda:
     name: Timeout Error - Lambda Simulation
@@ -11,36 +8,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
-
+          python-version: '3.10'  # Specify exact version for stability
       - name: Install dependencies
-        run: pip install -r requirements.txt
-        if: exists('requirements.txt')
-
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found, skipping dependency installation"
+          fi
       - name: Copy Lambda handler
         run: |
           mkdir -p /tmp
           cp lambda_handler.py /tmp/lambda_handler.py
-
       - name: Run Lambda handler with timeout simulation
         run: python /tmp/lambda_handler.py
-
       - name: Display results
         run: cat /tmp/temp_log.log
-```
-
-### Explanation of Fixes
-- **Proper YAML Syntax**: Ensured 2-space indentation, correct key-value pairs, and valid step definitions. The `uses` and `run` keys are properly formatted.
-- **Checkout Repository**: Added `actions/checkout@v4` to access the repository files (e.g., `lambda_handler.py`, `fix_engine`).
-- **Python Setup**: Used `actions/setup-python@v5` to set up a Python environment, as the Lambda handler is Python-based.
-- **Dependency Installation**: Added a step to install dependencies if a `requirements.txt` exists (conditional to avoid errors if no file is present).
-- **File Copy**: Copied `lambda_handler.py` to `/tmp` to align with the Lambda handler’s log path (`/tmp/temp_log.log`).
-- **Execution**: Runs the Python script directly, relying on the embedded `simulate_timeout` function to generate logs.
-- **Log Display**: Outputs the generated log for debugging.
-
-### Updated Lambda Handler Code
-The `lambda_handler.py` from the previous input is already designed to work in a Lambda-like environment and includes the timeout simulation. However, to ensure compatibility with GitHub Actions (which doesn’t use AWS Lambda’s `event` and `context`), I
