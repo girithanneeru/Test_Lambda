@@ -1,0 +1,92 @@
+import json
+import subprocess
+import sys
+import time
+import random
+from datetime import datetime
+from fix_engine import classify_logs, fix_dispatcher
+
+def simulate_timeout(log_path):
+    """Simulate a long-running operation with 50% chance of timeout and retries."""
+    max_retries = 2
+    retry_count = 0
+    log_lines = []
+    
+    def log_message(message):
+        timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        log_lines.append(f"{timestamp} {message}")
+    
+    log_message("[INFO] Starting long-running operation...")
+    
+    while True:
+        if retry_count > 0:
+            log_message(f"[WARNING] Operation timed out. Retrying ({retry_count}/{max_retries})...")
+        
+        # Simulate operation with 50% chance of success
+        if random.randint(0, 1) == 0:
+            log_message("[INFO] Operation completed successfully.")
+            break
+        else:
+            log_message("[ERROR] Operation timed out after 120 seconds")
+            retry_count += 1
+            if retry_count > max_retries:
+                log_message(f"[ERROR] Operation failed after {max_retries} retries.")
+                log_message("[INFO] Exiting with status 1")
+                break
+            time.sleep(2)  # Simulate delay between retries
+    
+    # Write logs to file
+    with open(log_path, 'w') as f:
+        f.write('\n'.join(log_lines))
+    
+    return log_lines[-1].endswith("status 0")
+
+def lambda_handler(event, context):
+    log_path = '/tmp/temp_log.log'
+    
+    # Run timeout simulation to generate log
+    simulation_success = simulate_timeout(log_path)
+    
+    # Read the generated log
+    with open(log_path, 'r') as f:
+        log = f.read()
+    
+    # Classify log
+    error_type = classify_logs.classify_log(log_path)
+    
+    # Apply rules-based fix first
+    rules = [
+        {"match": "npm ERR!", "fix": "npm cache clean --force && npm install"},
+        {"match": "ModuleNotFoundError", "fix": "pip install -r requirements.txt"},
+        {"match": "EADDRINUSE", "fix": "killall node"},
+        {"match": "command not found", "fix": "echo 'Install missing CLI tool manually'"},
+        {"match": "Failed to compile", "fix": "Check for syntax errors or missing dependencies"}
+    ]
+    
+    fix_applied = False
+    fix_result = None
+    
+    # Check rules first
+    for rule in rules:
+        if rule["match"] in log:
+            try:
+                subprocess.run(rule["fix"], shell=True, check=True)
+                fix_result = f"Applied rule-based fix: {rule['fix']}"
+                fix_applied = True
+                break
+            except subprocess.CalledProcessError:
+                fix_result = f"Failed to apply rule-based fix: {rule['fix']}"
+                fix_applied = False
+    
+    # If no rule-based fix was applied, fall back to original fix dispatcher
+    if not fix_applied:
+        fix_result = fix_dispatcher.dispatch_fix(error_type)
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'error_type': error_type,
+            'fix_applied': fix_result,
+            'simulation_success': simulation_success
+        })
+    }
